@@ -1,28 +1,56 @@
 import pandas as pd
+import numpy as np
 import requests
 import uuid
 import json
 
-CSV = "uterances.csv"
-URL = "https://http.msging.net/commands"
-KEY = "<BOT KEY>"
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
 
-def get_payload(uterance="test"):
+CSV = "utterances.csv"
+URL = "https://http.msging.net/commands"
+KEY = YOUR BOT KEY
+
+def get_payload(utterance="test"):
     
     payload = {"id": str(uuid.uuid1()),
                "to": "postmaster@ai.msging.net",
                "method": "set",
                "uri": "/analysis",
                "type": "application/vnd.iris.ai.analysis-request+json",
-               "resource": {"text": uterance}}
+               "resource": {"text": utterance}}
 
     return payload
+
+def get_metrics(score, flag, intent, predicted):
+
+    metrics = {'Item': ['Total',
+                        'Classificados Corretamente',
+                        'Classificados Incorretamente',
+                        'Confiabilidade Média',
+                        'Acurácia',
+                        'Precisão',
+                        'Recall',
+                        'F1 Score'],
+
+               'Valor': [len(score),
+                         flag.count(True),
+                         flag.count(False),
+                         round(np.mean(score), 2),
+                         round(accuracy_score(intent, predicted), 2),
+                         round(precision_score(intent, predicted, average='micro'), 2),
+                         round(recall_score(intent, predicted, average='micro'), 2),
+                         round(f1_score(intent, predicted, average='micro'), 2)]}
+
+    return metrics
 
 def main():
 
     df = pd.read_csv(CSV, sep=";")
     
-    results = {'uterance': [],
+    results = {'utterance': [],
                'intent': [],
                'predicted': [],
                'score': [],
@@ -30,12 +58,12 @@ def main():
                'log': []}
 
     for index, row in df.iterrows():
-        uterance = str(row[0])
-        intent   = str(row[1])
+        utterance = str(row[0])
+        intent    = str(row[1])
 
         headers = {'Authorization': KEY, 
                    'Content-Type': 'application/json'}
-        payload = get_payload(uterance=uterance)
+        payload = get_payload(utterance=utterance)
 
         try:
             r = requests.post(URL, headers=headers, data=json.dumps(payload))
@@ -53,7 +81,7 @@ def main():
             if intent == predict['name']:
                 flag = True
             
-            results['uterance'].append(uterance)
+            results['utterance'].append(utterance)
             results['intent'].append(intent)
             results['predicted'].append(predict['name'])
             results['score'].append(round(predict['score'], 2))
@@ -61,11 +89,23 @@ def main():
             results['log'].append(r.json()['resource']['intentions']) 
 
         except Exception as e:
-            print("Error for {}: {}".format(uterance, e))
+            print("Error for {}: {}".format(utterance, e))
             continue
 
+    metrics = get_metrics(score=results['score'], 
+                          flag=results['flag'], 
+                          intent=results['intent'], 
+                          predicted=results['predicted'])
+
+    writer = pd.ExcelWriter('analysis.xlsx')
     df = pd.DataFrame.from_dict(results)
-    df.to_excel("analysis.xlsx", sheet_name='uterance_predict', index=False) 
+    df.to_excel(writer, sheet_name='utterance_predict', index=False) 
+    df = pd.DataFrame.from_dict(metrics)
+    df.to_excel(writer, sheet_name='metrics', index=False) 
+
+    writer.save()
+
+    print("Done")
 
 if __name__ == '__main__':
     main()
